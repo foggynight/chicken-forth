@@ -1,2 +1,4 @@
-TODO Add looping construct
-TODO Add word definition construct
+DONE add number runner
+TODO add stack underflow error
+TODO add compiler and executer
+TODO add word definitions

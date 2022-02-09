@@ -38,7 +38,21 @@
 (define (stk-ref i) (list-ref stk i))
 (define (stk-top) (car stk))
 
-;;> exec <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> dictionary <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define dict (make-hash-table #:hash string-ci-hash #:test string-ci=?))
+(define (dict-add! word code) (hash-table-set! dict word code))
+(define (dict-ref word) (hash-table-ref dict word))
+(define (dict-has? word) (hash-table-exists? dict word))
+
+(define-constant default-words
+  '(drop dup over rot swap + - * /))
+(for-each (lambda (e) (dict-add! (symbol->string e) e))
+          default-words)
+
+;;> compiler <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;> executer <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (exec-code! code)
   (case code
@@ -60,25 +74,20 @@
          (stk-push! ((eval code) a1 a2)))))
     ))
 
-;;> dictionary <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> runner <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define dict (make-hash-table #:hash string-ci-hash #:test string-ci=?))
-(define (dict-add! word code) (hash-table-set! dict word code))
-(define (dict-ref word) (hash-table-ref dict word))
-(define (dict-has? word) (hash-table-exists? dict word))
+(define (num-valid? str)
+  (let ((num (string->number str)))
+    (and num (fixnum? num))))
 
-(define-constant default-words
-  '(drop dup over rot swap + - * /))
-(for-each (lambda (e) (dict-add! (symbol->string e) e))
-          default-words)
-
-;;> compiler <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define (num-run! str)
+  (stk-push! (string->number str)))
 
 ;;> interpreter <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (inter-word! word)
   (cond ((dict-has? word) (exec-code! (dict-ref word)))
-        ((string->number word) (stk-push! (string->number word)))
+        ((num-valid? word) (num-run! word))
         (else (printf "undefined word: ~A~%" word))))
 
 ;;> repl <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
