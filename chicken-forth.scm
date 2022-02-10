@@ -6,108 +6,150 @@
         (chicken io)
         (chicken process-context)
         (chicken string)
-        (srfi 1)
-        (srfi 69)
-        format)
+        (srfi 25)
+        (srfi 69))
+
+;;> config <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define DATA-STACK-SIZE (expt 2 16))
 
 ;;> misc <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (1+ n) (+ n 1))
 (define (1- n) (- n 1))
 
-;;> list <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> array <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (list-drop lst i)
-  (cond ((null? lst) '())
-        ((positive? i) (cons (car lst) (list-drop (cdr lst) (1- i))))
-        ((zero? i) (cdr lst))
-        (else lst)))
+(define (array-shift-left! arr start end)
+  (do ((i start (+ i 1)))
+      ((= i (1- end)))
+    (array-set! arr i (array-ref arr (1+ i)))))
 
-(define (list-insert lst i elm)
-  (cond ((null? lst) (cons elm '()))
-        ((positive? i) (cons (car lst) (list-insert (cdr lst) (1- i) elm)))
-        (else (cons elm lst))))
+(define (array-shift-right! arr start end)
+  (do ((i (1- end) (- i 1)))
+      ((= i start))
+    (array-set! arr i (array-ref arr (1- i)))))
 
 ;;> stack <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define stk '())
-(define (stk-drop! i) (set! stk (list-drop stk i)))
-(define (stk-ins! i elm) (set! stk (list-insert stk i elm)))
-(define (stk-pop!) (set! stk (cdr stk)))
-(define (stk-push! elm) (set! stk (cons elm stk)))
-(define (stk-ref i) (list-ref stk i))
-(define (stk-top) (car stk))
+(define-record-type stack
+  (%make-stack data size index)
+  stack?
+  (data stack-data)
+  (size stack-size)
+  (index stack-index stack-index-set!))
+
+(define (make-stack size)
+  (%make-stack (make-array (shape 0 size) 0) size 0))
+
+(define (stack-index-inc! stk) (stack-index-set! stk (1+ (stack-index stk))))
+(define (stack-index-dec! stk) (stack-index-set! stk (1- (stack-index stk))))
+
+(define (stack-push! stk elem)
+  (array-set! (stack-data stk) (stack-index stk) elem)
+  (stack-index-inc! stk))
+(define (stack-pop! stk) (stack-index-dec! stk))
+(define (stack-top stk) (array-ref (stack-data stk) (1- (stack-index stk))))
+
+(define (stack-shift! stk offset dir)
+  (case dir
+    ((left)
+     (array-shift-left! (stack-data stk)
+                        (- (stack-index stk) offset 1)
+                        (stack-index stk))
+     (stack-index-dec! stk))
+    ((right)
+     (array-shift-right! (stack-data stk)
+                         (- (stack-index stk) offset)
+                         (1+ (stack-index stk)))
+     (stack-index-inc! stk))))
+
+(define (stack-ref stk offset)
+  (array-ref (stack-data stk) (- (stack-index stk) offset 1)))
+(define (stack-set! stk offset elem)
+  (array-set! (stack-data stk) (- (stack-index stk) offset 1) elem))
+
+(define (stack-ins! stk offset elem)
+  (stack-shift! stk offset 'right)
+  (stack-set! stk offset elem))
+(define (stack-drop! stk offset) (stack-shift! stk offset 'left))
 
 ;;> dictionary <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define dict (make-hash-table #:hash string-ci-hash #:test string-ci=?))
-(define (dict-add! word code) (hash-table-set! dict word code))
-(define (dict-ref word) (hash-table-ref dict word))
-(define (dict-has? word) (hash-table-exists? dict word))
+(define (make-dict) (make-hash-table #:hash string-ci-hash #:test string-ci=?))
+(define (dict-add! dict word code) (hash-table-set! dict word code))
+(define (dict-ref dict word) (hash-table-ref dict word))
+(define (dict-has? dict word) (hash-table-exists? dict word))
 
+(define dict (make-dict))
 (define-constant default-words
   '(drop dup over rot swap + - * /))
-(for-each (lambda (e) (dict-add! (symbol->string e) e))
+(for-each (lambda (e) (dict-add! dict (symbol->string e) e))
           default-words)
+
+;;> code <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;> compiler <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;> executer <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (exec-code! code)
+(define (exec-code! code stk)
   (case code
-    ((drop) (stk-pop!))
-    ((dup) (stk-push! (stk-top)))
-    ((over) (stk-push! (stk-ref 1)))
+    ((drop) (stack-pop! stk))
+    ((dup) (stack-push! stk (stack-top stk)))
+    ((over) (stack-push! stk (stack-ref stk 1)))
     ((rot)
-     (stk-push! (stk-ref 2))
-     (stk-drop! 3))
+     (stack-push! stk (stack-ref stk 2))
+     (stack-drop! stk 3))
     ((swap)
-     (let ((t1 (stk-top)))
-       (stk-pop!)
-       (stk-ins! 1 t1)))
+     (let ((t1 (stack-top stk)))
+       (stack-pop! stk)
+       (stack-ins! stk 1 t1)))
     ((+ - * /)
-     (let ((a2 (stk-top)))
-       (stk-pop!)
-       (let ((a1 (stk-top)))
-         (stk-pop!)
-         (stk-push! ((eval code) a1 a2)))))
+     (let ((a2 (stack-top stk)))
+       (stack-pop! stk)
+       (let ((a1 (stack-top stk)))
+         (stack-pop! stk)
+         (stack-push! stk ((eval code) a1 a2)))))
     ))
 
 ;;> runner <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (num-valid? str)
+(define (number-valid? str)
   (let ((num (string->number str)))
     (and num (fixnum? num))))
 
-(define (num-run! str)
-  (stk-push! (string->number str)))
+(define (number-run! str stk)
+  (stack-push! stk (string->number str)))
 
 ;;> interpreter <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (inter-word! word)
-  (cond ((dict-has? word) (exec-code! (dict-ref word)))
-        ((num-valid? word) (num-run! word))
+(define (inter-word! word stk)
+  (cond ((dict-has? dict word) (exec-code! (dict-ref dict word) stk))
+        ((number-valid? word) (number-run! word stk))
         (else (printf "undefined word: ~A~%" word))))
 
-;;> repl <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> main <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (print-stk cpy stk)
-  (format #t "( ~{~A ~}" (reverse cpy))
-  (format #t "-- ~{~A ~})~%" (reverse stk)))
+(define (print-stack stk)
+  (display "( ")
+  (do ((i 0 (+ i 1)))
+      ((= i (stack-index stk)))
+    (display (array-ref (stack-data stk) i))
+    (display #\space))
+  (display ")")
+  (newline))
 
-(define (repl)
-  (let ((line (read-line)))
-    (when (eof-object? line)
-      (exit))
+(define (main)
+  (define stk (make-stack DATA-STACK-SIZE))
+  (do ((line (read-line) (read-line)))
+      ((eof-object? line))
     (let ((words (string-split line)))
-      (do ((lst words (cdr lst))
-           (cpy (list-copy stk) (list-copy stk)))
+      (do ((lst words (cdr lst)))
           ((null? lst))
-        (inter-word! (car lst))
-        (print-stk cpy stk))))
-  (repl))
+        (inter-word! (car lst) stk)
+        (print-stack stk)))))
 
 (let ((args (command-line-arguments)))
-  (cond ((null? args) (repl))
-        (else (with-input-from-file (car args) repl))))
+  (cond ((null? args) (main))
+        (else (with-input-from-file (car args) main))))

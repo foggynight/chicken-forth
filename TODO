@@ -1,4 +1,5 @@
 DONE add number runner
-TODO add stack underflow error
+DONE use array instead of list for stack type
 TODO add compiler and executer
+TODO add stack underflow error
 TODO add word definitions
