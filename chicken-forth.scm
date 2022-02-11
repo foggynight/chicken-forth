@@ -7,7 +7,7 @@
         (chicken process-context)
         (chicken string)
         (srfi 25)
-        (srfi 69))
+        procedural-macros)
 
 ;;> config <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -76,16 +76,23 @@
 
 ;;> dictionary <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (make-dict) (make-hash-table #:hash string-ci-hash #:test string-ci=?))
-(define (dict-add! dict word code) (hash-table-set! dict word code))
-(define (dict-ref dict word) (hash-table-ref dict word))
-(define (dict-has? dict word) (hash-table-exists? dict word))
+(define (make-dict . rest) rest)
 
-(define dict (make-dict))
+(define-macro (dict-add! dict word code)
+  `(set! ,dict (cons (cons ,word ,code) ,dict)))
+
+(define (dict-ref dict word)
+  (let ((code (assq word dict)))
+    (if code (cdr code) #f)))
+
 (define-constant default-words
   '(drop dup over rot swap + - * /))
-(for-each (lambda (e) (dict-add! dict (symbol->string e) e))
-          default-words)
+
+(define (default-dict)
+  (define dict (make-dict))
+  (for-each (lambda (e) (dict-add! dict e e))
+            default-words)
+  dict)
 
 ;;> code <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -124,8 +131,9 @@
 
 ;;> interpreter <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (inter-word! word stk)
-  (cond ((dict-has? dict word) (exec-code! (dict-ref dict word) stk))
+(define (inter-word! word stk dict)
+  (define code (dict-ref dict (string->symbol word)))
+  (cond ((not (not code)) (exec-code! code stk))
         ((number-valid? word) (number-run! word stk))
         (else (printf "undefined word: ~A~%" word))))
 
@@ -142,12 +150,13 @@
 
 (define (main)
   (define stk (make-stack DATA-STACK-SIZE))
+  (define dict (default-dict))
   (do ((line (read-line) (read-line)))
       ((eof-object? line))
     (let ((words (string-split line)))
       (do ((lst words (cdr lst)))
           ((null? lst))
-        (inter-word! (car lst) stk)
+        (inter-word! (car lst) stk dict)
         (print-stack stk)))))
 
 (let ((args (command-line-arguments)))
