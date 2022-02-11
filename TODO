@@ -1,6 +1,8 @@
 DONE add number runner
 DONE use array instead of list for stack type
 DONE represent dictionary using list of dotted pairs
-TODO add compiler and executer
+DONE add compiler and word definitions
 TODO add stack underflow error
-TODO add word definitions
+TODO add return stack
+TODO add version word
+TODO add flags to control stack sizes

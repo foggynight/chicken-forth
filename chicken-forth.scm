@@ -3,22 +3,20 @@
 ;; Released under the MIT license.
 
 (import (chicken format)
-        (chicken io)
         (chicken process-context)
-        (chicken string)
         (srfi 25)
         procedural-macros)
 
-;;> config <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> CONFIG <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define DATA-STACK-SIZE (expt 2 16))
 
-;;> misc <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> MISC <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (1+ n) (+ n 1))
 (define (1- n) (- n 1))
 
-;;> array <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> ARRAY <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (array-shift-left! arr start end)
   (do ((i start (+ i 1)))
@@ -30,7 +28,7 @@
       ((= i start))
     (array-set! arr i (array-ref arr (1- i)))))
 
-;;> stack <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> STACK <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-record-type stack
   (%make-stack data size index)
@@ -74,34 +72,92 @@
   (stack-set! stk offset elem))
 (define (stack-drop! stk offset) (stack-shift! stk offset 'left))
 
-;;> dictionary <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> DICTIONARY <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (make-dict . rest) rest)
+;; The dictionary contains the wordlist of the program. Each word defined in a
+;; program contains an entry in the dictionary, this entry defines its name and
+;; how to execute it.
+;;
+;; The dictionary is represented by a record containing a list of dotted pairs,
+;; where the keys are the names of the words converted from strings into
+;; symbols, and the datums are one of the following:
+;;
+;; - symbol: A primitive word, these have a clause in the EXEC-PRIM! procedure.
+;; - list: A list containing zero or more words and/or numbers.
 
-(define-macro (dict-add! dict word code)
-  `(set! ,dict (cons (cons ,word ,code) ,dict)))
+(define-record-type dict
+  (%make-dict lst)
+  dict?
+  (lst dict-lst dict-lst-set!))
+
+(define (make-dict . rest) (%make-dict rest))
+
+(define (dict-add! dict word code)
+  (dict-lst-set! dict (cons (cons word code) (dict-lst dict))))
 
 (define (dict-ref dict word)
-  (let ((code (assq word dict)))
+  (let ((code (assq word (dict-lst dict))))
     (if code (cdr code) #f)))
 
-(define-constant default-words
-  '(drop dup over rot swap + - * /))
+(define (dict-has? dict word)
+  (not (not (dict-ref dict word))))
+
+(define-constant primitives
+  '(: drop dup over rot swap + - * /))
 
 (define (default-dict)
   (define dict (make-dict))
   (for-each (lambda (e) (dict-add! dict e e))
-            default-words)
+            primitives)
   dict)
 
-;;> code <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> PARSER <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;;> compiler <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(: parse-word (-> (or string false)))
+(define (parse-word)
+  (define word "")
+  (let loop ((read #f)
+             (char (read-char)))
+    (if read
+        (if (or (eof-object? char) (char-whitespace? char))
+            word
+            (begin (set! word (string-append word (string char)))
+                   (loop #t (read-char))))
+        (cond ((eof-object? char) #f)
+              ((char-whitespace? char) (loop #f (read-char)))
+              (else (loop #t char))))))
 
-;;> executer <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> RUNNER <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (exec-code! code stk)
+(define (number-valid? str)
+  (let ((num (string->number str)))
+    (and num (fixnum? num))))
+
+(define (number-run! str stk)
+  (stack-push! stk (string->number str)))
+
+;;> COMPILER <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (comp-code! dict)
+  (define name (parse-word))
+  (define fail #f)
+  (define code
+    (let loop ((word (parse-word)))
+      (cond ((string=? word ";") '())
+            (else (let ((sym (string->symbol word)))
+                    (cond ((dict-has? dict sym) (cons sym (loop (parse-word))))
+                          ((number-valid? word) (cons (string->number word)
+                                                      (loop (parse-word))))
+                          (else (set! fail #t) '())))))))
+  (if fail
+      (print "failed to compile: ~A~%" name)
+      (dict-add! dict (string->symbol name) code)))
+
+;;> EXECUTER <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (exec-prim! code stk dict)
   (case code
+    ((:) (comp-code! dict))
     ((drop) (stack-pop! stk))
     ((dup) (stack-push! stk (stack-top stk)))
     ((over) (stack-push! stk (stack-ref stk 1)))
@@ -117,27 +173,33 @@
        (stack-pop! stk)
        (let ((a1 (stack-top stk)))
          (stack-pop! stk)
-         (stack-push! stk ((eval code) a1 a2)))))
-    ))
+         (stack-push! stk ((eval code) a1 a2)))))))
 
-;;> runner <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define (exec-list! lst stk dict)
+  (for-each (lambda (word)
+              (cond ((number? word) (stack-push! stk word))
+                    ((symbol? word)
+                     (let ((code (dict-ref dict word)))
+                       (if code
+                           (exec-code! code stk dict)
+                           (printf "undefined word: ~A~%" word))))
+                    (else (printf "invalid word: ~A~%" word))))
+            lst))
 
-(define (number-valid? str)
-  (let ((num (string->number str)))
-    (and num (fixnum? num))))
+(define (exec-code! code stk dict)
+  (if (symbol? code)
+      (exec-prim! code stk dict)
+      (exec-list! code stk dict)))
 
-(define (number-run! str stk)
-  (stack-push! stk (string->number str)))
-
-;;> interpreter <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> INTERPRETER <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (inter-word! word stk dict)
   (define code (dict-ref dict (string->symbol word)))
-  (cond ((not (not code)) (exec-code! code stk))
+  (cond ((not (not code)) (exec-code! code stk dict))
         ((number-valid? word) (number-run! word stk))
         (else (printf "undefined word: ~A~%" word))))
 
-;;> main <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;> MAIN <;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (print-stack stk)
   (display "( ")
@@ -148,16 +210,16 @@
   (display ")")
   (newline))
 
+(define (print-dict dict)
+  (print (dict-lst dict)))
+
 (define (main)
   (define stk (make-stack DATA-STACK-SIZE))
   (define dict (default-dict))
-  (do ((line (read-line) (read-line)))
-      ((eof-object? line))
-    (let ((words (string-split line)))
-      (do ((lst words (cdr lst)))
-          ((null? lst))
-        (inter-word! (car lst) stk dict)
-        (print-stack stk)))))
+  (do ((word (parse-word) (parse-word)))
+      ((eof-object? word))
+    (inter-word! word stk dict)
+    (print-stack stk)))
 
 (let ((args (command-line-arguments)))
   (cond ((null? args) (main))
