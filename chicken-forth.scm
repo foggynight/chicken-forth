@@ -150,7 +150,7 @@
                                                       (loop (parse-word))))
                           (else (set! fail #t) '())))))))
   (if fail
-      (print "failed to compile: ~A~%" name)
+      (printf "failed to compile: ~A~%" name)
       (dict-add! dict (string->symbol name) code)))
 
 ;;; executer ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
