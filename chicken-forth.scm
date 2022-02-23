@@ -103,7 +103,7 @@
   (not (not (dict-ref dict word))))
 
 (define-constant primitives
-  '(: drop dup over rot swap + - * / , read |.| write lf cr newline))
+  '(: dup over drop nip swap rot + - * / , read |.| write lf cr newline))
 
 (define (default-dict)
   (define dict (make-dict))
@@ -158,16 +158,20 @@
 (define (exec-prim! code stk dict)
   (case code
     ((:) (comp-code! dict))
-    ((drop) (stack-pop! stk))
     ((dup) (stack-push! stk (stack-top stk)))
     ((over) (stack-push! stk (stack-ref stk 1)))
-    ((rot)
-     (stack-push! stk (stack-ref stk 2))
-     (stack-drop! stk 3))
+    ((drop) (stack-pop! stk))
+    ((nip)
+     (let ((t1 (stack-top stk)))
+       (stack-pop! stk)
+       (stack-set! stk 0 t1)))
     ((swap)
      (let ((t1 (stack-top stk)))
        (stack-pop! stk)
        (stack-ins! stk 1 t1)))
+    ((rot)
+     (stack-push! stk (stack-ref stk 2))
+     (stack-drop! stk 3))
     ((+ - * /)
      (let ((a2 (stack-top stk)))
        (stack-pop! stk)
