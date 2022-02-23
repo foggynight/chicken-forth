@@ -217,7 +217,7 @@
   (define stk (make-stack DATA-STACK-SIZE))
   (define dict (default-dict))
   (do ((word (parse-word) (parse-word)))
-      ((eof-object? word))
+      ((or (not word) (eof-object? word)))
     (inter-word! word stk dict)
     (print-stack stk)))
 
