@@ -140,16 +140,16 @@
 
 (define (comp-code! dict)
   (define name (parse-word))
-  (define fail #f)
   (define code
     (let loop ((word (parse-word)))
-      (cond ((string=? word ";") '())
-            (else (let ((sym (string->symbol word)))
-                    (cond ((dict-has? dict sym) (cons sym (loop (parse-word))))
-                          ((number-valid? word) (cons (string->number word)
-                                                      (loop (parse-word))))
-                          (else (set! fail #t) '())))))))
-  (if fail
+      (if (string=? word ";")
+          '()
+          (let ((sym (string->symbol word)))
+            (cond ((dict-has? dict sym) (cons sym (loop (parse-word))))
+                  ((number-valid? word) (cons (string->number word)
+                                              (loop (parse-word))))
+                  (else #f))))))
+  (if (not code)
       (printf "failed to compile: ~A~%" name)
       (dict-add! dict (string->symbol name) code)))
 
