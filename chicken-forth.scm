@@ -103,7 +103,7 @@
   (not (not (dict-ref dict word))))
 
 (define-constant primitives
-  '(: drop dup over rot swap + - * /))
+  '(: drop dup over rot swap + - * / , read |.| write lf cr newline))
 
 (define (default-dict)
   (define dict (make-dict))
@@ -173,7 +173,11 @@
        (stack-pop! stk)
        (let ((a1 (stack-top stk)))
          (stack-pop! stk)
-         (stack-push! stk ((eval code) a1 a2)))))))
+         (stack-push! stk ((eval code) a1 a2)))))
+    ((, read) (stack-push! stk (read-byte)))
+    ((|.| write) (write (stack-top stk)) (stack-pop! stk))
+    ((lf cr newline) (newline))
+    ))
 
 (define (exec-list! lst stk dict)
   (for-each (lambda (word)
@@ -218,8 +222,7 @@
   (define dict (default-dict))
   (do ((word (parse-word) (parse-word)))
       ((or (not word) (eof-object? word)))
-    (inter-word! word stk dict)
-    (print-stack stk)))
+    (inter-word! word stk dict)))
 
 (let ((args (command-line-arguments)))
   (cond ((null? args) (main))
