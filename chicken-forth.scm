@@ -155,7 +155,7 @@
 
 ;; executer ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (exec-prim! code stk dict)
+(define (exec-primitive! code stk dict)
   (case code
     ((:) (comp-code! dict))
     ((dup) (stack-push! stk (stack-top stk)))
@@ -196,7 +196,7 @@
 
 (define (exec-code! code stk dict)
   (if (symbol? code)
-      (exec-prim! code stk dict)
+      (exec-primitive! code stk dict)
       (exec-list! code stk dict)))
 
 ;; interpreter ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
