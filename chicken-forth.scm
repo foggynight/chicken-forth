@@ -7,16 +7,16 @@
         (srfi 25)
         procedural-macros)
 
-;; config ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; config ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define DATA-STACK-SIZE (expt 2 16))
 
-;; misc ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; misc ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (1+ n) (+ n 1))
 (define (1- n) (- n 1))
 
-;; array ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; array ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (array-shift-left! arr start end)
   (do ((i start (+ i 1)))
@@ -28,7 +28,7 @@
       ((= i start))
     (array-set! arr i (array-ref arr (1- i)))))
 
-;; stack ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; stack ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-record-type stack
   (%make-stack data size index)
@@ -72,8 +72,8 @@
   (stack-set! stk offset elem))
 (define (stack-drop! stk offset) (stack-shift! stk offset 'left))
 
-;; dictionary ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;;; dictionary ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
 ;; The dictionary contains the wordlist of the program. Each word defined in a
 ;; program contains an entry in the dictionary, this entry defines its name and
 ;; how to execute it.
@@ -111,7 +111,7 @@
             primitives)
   dict)
 
-;; parser ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; parser ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (: parse-word (-> (or string false)))
 (define (parse-word)
@@ -127,7 +127,7 @@
               ((char-whitespace? char) (loop #f (read-char)))
               (else (loop #t char))))))
 
-;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (number-valid? str)
   (let ((num (string->number str)))
@@ -136,7 +136,7 @@
 (define (number-run! str stk)
   (stack-push! stk (string->number str)))
 
-;; compiler ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; compiler ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (comp-code! dict)
   (define name (parse-word))
@@ -153,7 +153,7 @@
       (printf "failed to compile: ~A~%" name)
       (dict-add! dict (string->symbol name) code)))
 
-;; executer ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; executer ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (exec-primitive! code stk dict)
   (case code
@@ -199,7 +199,7 @@
       (exec-primitive! code stk dict)
       (exec-list! code stk dict)))
 
-;; interpreter ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; interpreter ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (inter-word! word stk dict)
   (define code (dict-ref dict (string->symbol word)))
@@ -207,7 +207,7 @@
         ((number-valid? word) (number-run! word stk))
         (else (printf "undefined word: ~A~%" word))))
 
-;; main ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; main ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (print-stack stk)
   (display "( ")
