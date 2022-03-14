@@ -3,6 +3,7 @@ DONE use array instead of list for stack type
 DONE represent dictionary using list of dotted pairs
 DONE add compiler and word definitions
 DONE add read, write, and newline words
+TODO switch to indirect threaded code
 TODO add if else then words
 TODO add looping word
 TODO add stack underflow error
