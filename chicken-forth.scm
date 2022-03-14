@@ -4,8 +4,7 @@
 
 (import (chicken format)
         (chicken process-context)
-        (srfi 25)
-        procedural-macros)
+        (srfi 25))
 
 ;;; config ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
