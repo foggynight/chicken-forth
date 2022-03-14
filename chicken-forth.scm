@@ -10,20 +10,18 @@
 
 (define DATA-STACK-SIZE (expt 2 16))
 
-;;; misc ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; utility ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (1+ n) (+ n 1))
 (define (1- n) (- n 1))
 
-;;; array ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (define (array-shift-left! arr start end)
-  (do ((i start (+ i 1)))
+  (do ((i start (1+ i)))
       ((= i (1- end)))
     (array-set! arr i (array-ref arr (1+ i)))))
 
 (define (array-shift-right! arr start end)
-  (do ((i (1- end) (- i 1)))
+  (do ((i (1- end) (1- i)))
       ((= i start))
     (array-set! arr i (array-ref arr (1- i)))))
 
