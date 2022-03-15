@@ -93,9 +93,11 @@
   (stack-shift! stk offset 'right)
   (stack-set! stk offset elem))
 
-(: stack-drop! (stack fixnum -> void))
-(define (stack-drop! stk offset)
-  (stack-shift! stk offset 'left))
+(: stack-drop! (stack fixnum #!optional fixnum -> void))
+(define (stack-drop! stk offset #!optional (count 1))
+  (do ((i 0 (1+ i)))
+      ((>= i count))
+    (stack-shift! stk offset 'left)))
 
 ;;; dictionary ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -156,6 +158,10 @@
 (def-code "dup" 0
   (stack-push! pstk (stack-top pstk)))
 
+(def-code "?dup" 0
+  (unless (zero? (stack-top pstk))
+    (stack-push! pstk (stack-top pstk))))
+
 (def-code "over" 0
   (stack-push! pstk (stack-ref pstk 1)))
 
@@ -173,6 +179,23 @@
 (def-code "rot" 0
   (stack-push! pstk (stack-ref pstk 2))
   (stack-drop! pstk 3))
+
+(def-code "-rot" 0
+  (stack-ins! pstk 3 (stack-top pstk))
+  (stack-pop! pstk))
+
+(def-code "2dup" 0
+  (stack-push! pstk (stack-ref pstk 1))
+  (stack-push! pstk (stack-ref pstk 1)))
+
+(def-code "2drop" 0
+  (stack-drop! pstk 0 2))
+
+(def-code "2swap" 0
+  (let ((t1 (stack-pop! pstk))
+        (t2 (stack-pop! pstk)))
+    (stack-ins! pstk 2 t1)
+    (stack-ins! pstk 2 t2)))
 
 ;; arithmetic primitives
 
