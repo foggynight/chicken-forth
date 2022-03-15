@@ -2,18 +2,19 @@
 ;; Copyright (C) 2022 Robert Coffey
 ;; Released under the MIT license.
 
-(import (chicken format)
+(import (chicken bitwise)
+        (chicken format)
         (chicken process-context)
-        (srfi 25))
-
-;;; config ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define DATA-STACK-SIZE (expt 2 16))
+        (srfi 25)
+        procedural-macros)
 
 ;;; utility ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (1+ n) (+ n 1))
-(define (1- n) (- n 1))
+(: 1+ (number --> number)) (define (1+ n) (+ n 1))
+(: 1- (number --> number)) (define (1- n) (- n 1))
+
+(: // (number number --> fixnum))
+(define (// n d) (inexact->exact (floor (/ n d))))
 
 (define (array-shift-left! arr start end)
   (do ((i start (1+ i)))
@@ -26,6 +27,8 @@
     (array-set! arr i (array-ref arr (1- i)))))
 
 ;;; stack ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-type stack (struct stack))
 
 (define-record-type stack
   (%make-stack data size index)
@@ -43,8 +46,8 @@
 (define (stack-push! stk elem)
   (array-set! (stack-data stk) (stack-index stk) elem)
   (stack-index-inc! stk))
-(define (stack-pop! stk) (stack-index-dec! stk))
 (define (stack-top stk) (array-ref (stack-data stk) (1- (stack-index stk))))
+(define (stack-pop! stk) (let ((t (stack-top stk))) (stack-index-dec! stk) t))
 
 (define (stack-shift! stk offset dir)
   (case dir
@@ -71,44 +74,197 @@
 
 ;;; dictionary ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
-;; The dictionary contains the wordlist of the program. Each word defined in a
-;; program contains an entry in the dictionary, this entry defines its name and
-;; how to execute it.
-;;
-;; The dictionary is represented by a record containing a list of dotted pairs,
-;; where the keys are the names of the words converted from strings into
-;; symbols, and the datums are one of the following:
-;;
-;; - symbol: A primitive word, these have a clause in the EXEC-PRIM! procedure.
-;; - list: A list containing zero or more words and/or numbers.
+;; The dictionary contains the wordlist of the program, it is represented by a
+;; list of entry records.
 
-(define-record-type dict
-  (%make-dict lst)
-  dict?
-  (lst dict-lst dict-lst-set!))
+(define-type entry (struct entry))
+(define-type dict (list-of entry))
 
-(define (make-dict . rest) (%make-dict rest))
+(define-record-type entry
+  (make-entry name flag code)
+  entry?
+  (name entry-name entry-name-set!)
+  (flag entry-flag entry-flag-set!)
+  (code entry-code entry-code-set!))
 
-(define (dict-add! dict word code)
-  (dict-lst-set! dict (cons (cons word code) (dict-lst dict))))
-
+(: dict-ref (dict string --> (or entry false)))
 (define (dict-ref dict word)
-  (let ((code (assq word (dict-lst dict))))
-    (if code (cdr code) #f)))
+  (let loop ((lst dict))
+    (cond ((null? lst) #f)
+          ((string-ci=? word (entry-name (car lst))) (car lst))
+          (else (loop (cdr lst))))))
 
+(: dict-has? (dict string --> boolean))
 (define (dict-has? dict word)
   (not (not (dict-ref dict word))))
 
-(define-constant primitives
-  '(: dup over drop nip swap rot + - * / , read |.| write lf cr newline))
+;;; global ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (default-dict)
-  (define dict (make-dict))
-  (for-each (lambda (e) (dict-add! dict e e))
-            primitives)
-  dict)
+(define-constant TRUE -1)
+(define-constant FALSE 0)
 
-;;; parser ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-constant STATE-INTERPRET #f)
+(define-constant STATE-COMPILE   #t)
+
+(define-constant VERSION "0.1.0")
+
+(define state STATE-INTERPRET)
+(define base  10)
+
+(define pstk (make-stack (expt 2 16)))
+(define rstk (make-stack (expt 2 16)))
+(define dict '())
+
+;;; primitives ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Add an entry to the dictionary with the members NAME and FLAG, CODE is
+;; created by wrapping the given expression body in REST in a lambda. This macro
+;; also defines a procedure named forth-NAME which points to that lambda.
+(define-macro (def-code name flag . rest)
+  (let ((thunk `(lambda () ,@rest)))
+    `(begin (set! dict (cons (make-entry ,name ,flag ,thunk) dict))
+            (define (,(string->symbol (string-append "forth-" name)))
+              (,thunk)))))
+
+;; stack manipulation primitives
+
+(def-code "dup" 0
+  (stack-push! pstk (stack-top pstk)))
+
+(def-code "over" 0
+  (stack-push! pstk (stack-ref pstk 1)))
+
+(def-code "drop" 0
+  (stack-pop! pstk))
+
+(def-code "nip" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-set! pstk 0 t)))
+
+(def-code "swap" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-ins! pstk 1 t)))
+
+(def-code "rot" 0
+  (stack-push! pstk (stack-ref pstk 2))
+  (stack-drop! pstk 3))
+
+;; arithmetic primitives
+
+(def-code "+" 0
+  (stack-push! pstk (+ (stack-pop! pstk) (stack-pop! pstk))))
+
+(def-code "-" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (- (stack-pop! pstk) t))))
+
+(def-code "*" 0
+  (stack-push! pstk (* (stack-pop! pstk) (stack-pop! pstk))))
+
+(def-code "/" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (// (stack-pop! pstk) t))))
+
+(def-code "2+" 0
+  (stack-push! pstk (+ (stack-pop! pstk) 2)))
+
+(def-code "2-" 0
+  (stack-push! pstk (- (stack-pop! pstk) 2)))
+
+(def-code "4+" 0
+  (stack-push! pstk (+ (stack-pop! pstk) 4)))
+
+(def-code "4-" 0
+  (stack-push! pstk (- (stack-pop! pstk) 4)))
+
+;; comparison primitives
+
+(def-code "=" 0
+  (stack-push! pstk (if (= (stack-pop! pstk) (stack-pop! pstk)) TRUE FALSE)))
+
+(def-code "<>" 0
+  (stack-push! pstk (if (= (stack-pop! pstk) (stack-pop! pstk)) FALSE TRUE)))
+
+(def-code "<" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (< (stack-pop! pstk) t) TRUE FALSE))))
+
+(def-code ">" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (> (stack-pop! pstk) t) TRUE FALSE))))
+
+(def-code "<=" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (<= (stack-pop! pstk) t) TRUE FALSE))))
+
+(def-code ">=" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (>= (stack-pop! pstk) t) TRUE FALSE))))
+
+(def-code "0=" 0
+  (stack-push! pstk (if (zero? (stack-pop! pstk)) TRUE FALSE)))
+
+(def-code "0<>" 0
+  (stack-push! pstk (if (zero? (stack-pop! pstk)) FALSE TRUE)))
+
+(def-code "0<" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (negative? (stack-pop! pstk)) TRUE FALSE))))
+
+(def-code "0>" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (positive? (stack-pop! pstk)) TRUE FALSE))))
+
+(def-code "0<=" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (<= (stack-pop! pstk) 0) TRUE FALSE))))
+
+(def-code "0>=" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (if (>= (stack-pop! pstk) 0) TRUE FALSE))))
+
+;; bitwise primitives
+
+(def-code "and" 0
+  (stack-push! pstk (bitwise-and (stack-pop! pstk) (stack-pop! pstk))))
+
+(def-code "or" 0
+  (stack-push! pstk (bitwise-ior (stack-pop! pstk) (stack-pop! pstk))))
+
+(def-code "xor" 0
+  (stack-push! pstk (bitwise-xor (stack-pop! pstk) (stack-pop! pstk))))
+
+(def-code "invert" 0
+  (stack-push! pstk (bitwise-not (stack-pop! pstk))))
+
+;; input and output
+
+(def-code "." 0
+  (printf "~A " (stack-pop! pstk)))
+
+(def-code "emit" 0
+  (printf "~A" (integer->char (stack-pop! pstk))))
+
+;;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (number-valid? str)
+  (let ((num (string->number str)))
+    (and num (fixnum? num))))
+
+(define (number-run! str stk)
+  (stack-push! stk (string->number str)))
+
+;;; main ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(: print-stack (stack -> void))
+(define (print-stack stk)
+  (display "( ")
+  (do ((i 0 (1+ i)))
+      ((= i (stack-index stk)))
+    (display (array-ref (stack-data stk) i))
+    (display #\space))
+  (display ") ")
+  (flush-output))
 
 (: parse-word (-> (or string false)))
 (define (parse-word)
@@ -124,106 +280,14 @@
               ((char-whitespace? char) (loop #f (read-char)))
               (else (loop #t char))))))
 
-;;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (number-valid? str)
-  (let ((num (string->number str)))
-    (and num (fixnum? num))))
-
-(define (number-run! str stk)
-  (stack-push! stk (string->number str)))
-
-;;; compiler ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (comp-code! dict)
-  (define name (parse-word))
-  (define code
-    (let loop ((word (parse-word)))
-      (if (string=? word ";")
-          '()
-          (let ((sym (string->symbol word)))
-            (cond ((dict-has? dict sym) (cons sym (loop (parse-word))))
-                  ((number-valid? word) (cons (string->number word)
-                                              (loop (parse-word))))
-                  (else #f))))))
-  (if (not code)
-      (printf "failed to compile: ~A~%" name)
-      (dict-add! dict (string->symbol name) code)))
-
-;;; executer ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (exec-primitive! code stk dict)
-  (case code
-    ((:) (comp-code! dict))
-    ((dup) (stack-push! stk (stack-top stk)))
-    ((over) (stack-push! stk (stack-ref stk 1)))
-    ((drop) (stack-pop! stk))
-    ((nip)
-     (let ((t1 (stack-top stk)))
-       (stack-pop! stk)
-       (stack-set! stk 0 t1)))
-    ((swap)
-     (let ((t1 (stack-top stk)))
-       (stack-pop! stk)
-       (stack-ins! stk 1 t1)))
-    ((rot)
-     (stack-push! stk (stack-ref stk 2))
-     (stack-drop! stk 3))
-    ((+ - * /)
-     (let ((a2 (stack-top stk)))
-       (stack-pop! stk)
-       (let ((a1 (stack-top stk)))
-         (stack-pop! stk)
-         (stack-push! stk ((eval code) a1 a2)))))
-    ((, read) (stack-push! stk (read-byte)))
-    ((|.| write) (write (stack-top stk)) (stack-pop! stk))
-    ((lf cr newline) (newline))
-    ))
-
-(define (exec-list! lst stk dict)
-  (for-each (lambda (word)
-              (cond ((number? word) (stack-push! stk word))
-                    ((symbol? word)
-                     (let ((code (dict-ref dict word)))
-                       (if code
-                           (exec-code! code stk dict)
-                           (printf "undefined word: ~A~%" word))))
-                    (else (printf "invalid word: ~A~%" word))))
-            lst))
-
-(define (exec-code! code stk dict)
-  (if (symbol? code)
-      (exec-primitive! code stk dict)
-      (exec-list! code stk dict)))
-
-;;; interpreter ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (inter-word! word stk dict)
-  (define code (dict-ref dict (string->symbol word)))
-  (cond ((not (not code)) (exec-code! code stk dict))
-        ((number-valid? word) (number-run! word stk))
-        (else (printf "undefined word: ~A~%" word))))
-
-;;; main ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define (print-stack stk)
-  (display "( ")
-  (do ((i 0 (+ i 1)))
-      ((= i (stack-index stk)))
-    (display (array-ref (stack-data stk) i))
-    (display #\space))
-  (display ")")
-  (newline))
-
-(define (print-dict dict)
-  (print (dict-lst dict)))
-
+(: main (-> void))
 (define (main)
-  (define stk (make-stack DATA-STACK-SIZE))
-  (define dict (default-dict))
   (do ((word (parse-word) (parse-word)))
       ((or (not word) (eof-object? word)))
-    (inter-word! word stk dict)))
+    (let ((entry (dict-ref dict word)))
+      (cond ((not (not entry)) ((entry-code entry)))
+            ((number-valid? word) (number-run! word pstk))
+            (else (printf "undefined word: ~A~%" word))))))
 
 (let ((args (command-line-arguments)))
   (cond ((null? args) (main))
