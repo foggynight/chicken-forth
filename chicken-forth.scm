@@ -225,6 +225,22 @@
 (def-code "4-" 0
   (stack-push! pstk (- (stack-pop! pstk) 4)))
 
+(def-code "mod" 0
+  (let ((t (stack-pop! pstk)))
+    (stack-push! pstk (modulo (stack-pop! pstk) t))))
+
+(def-code "/mod" 0
+  (let ((t1 (stack-pop! pstk))
+        (t2 (stack-pop! pstk)))
+    (stack-push! pstk (// t2 t1))
+    (stack-push! pstk (modulo t2 t1))))
+
+(def-code "mod/" 0
+  (let ((t1 (stack-pop! pstk))
+        (t2 (stack-pop! pstk)))
+    (stack-push! pstk (modulo t2 t1))
+    (stack-push! pstk (// t2 t1))))
+
 ;; comparison primitives
 
 (def-code "=" 0
