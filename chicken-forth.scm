@@ -16,11 +16,15 @@
 (: // (number number --> fixnum))
 (define (// n d) (inexact->exact (floor (/ n d))))
 
+(define-type array (struct array))
+
+(: array-shift-left! (array fixnum fixnum -> void))
 (define (array-shift-left! arr start end)
   (do ((i start (1+ i)))
       ((= i (1- end)))
     (array-set! arr i (array-ref arr (1+ i)))))
 
+(: array-shift-right! (array fixnum fixnum -> void))
 (define (array-shift-right! arr start end)
   (do ((i (1- end) (1- i)))
       ((= i start))
@@ -37,18 +41,32 @@
   (size stack-size)
   (index stack-index stack-index-set!))
 
+(: make-stack (fixnum --> stack))
 (define (make-stack size)
   (%make-stack (make-array (shape 0 size) 0) size 0))
 
-(define (stack-index-inc! stk) (stack-index-set! stk (1+ (stack-index stk))))
-(define (stack-index-dec! stk) (stack-index-set! stk (1- (stack-index stk))))
+(: stack-index-inc! (stack -> void))
+(define (stack-index-inc! stk)
+  (stack-index-set! stk (1+ (stack-index stk))))
 
+(: stack-index-dec! (stack -> void))
+(define (stack-index-dec! stk)
+  (stack-index-set! stk (1- (stack-index stk))))
+
+(: stack-push! (stack any -> void))
 (define (stack-push! stk elem)
   (array-set! (stack-data stk) (stack-index stk) elem)
   (stack-index-inc! stk))
-(define (stack-top stk) (array-ref (stack-data stk) (1- (stack-index stk))))
-(define (stack-pop! stk) (let ((t (stack-top stk))) (stack-index-dec! stk) t))
 
+(: stack-top (stack --> any))
+(define (stack-top stk)
+  (array-ref (stack-data stk) (1- (stack-index stk))))
+
+(: stack-pop! (stack -> any))
+(define (stack-pop! stk)
+  (let ((t (stack-top stk))) (stack-index-dec! stk) t))
+
+(: stack-shift! (stack fixnum symbol -> void))
 (define (stack-shift! stk offset dir)
   (case dir
     ((left)
@@ -62,15 +80,22 @@
                          (1+ (stack-index stk)))
      (stack-index-inc! stk))))
 
+(: stack-ref (stack fixnum --> any))
 (define (stack-ref stk offset)
   (array-ref (stack-data stk) (- (stack-index stk) offset 1)))
+
+(: stack-set! (stack fixnum any -> void))
 (define (stack-set! stk offset elem)
   (array-set! (stack-data stk) (- (stack-index stk) offset 1) elem))
 
+(: stack-ins! (stack fixnum any -> void))
 (define (stack-ins! stk offset elem)
   (stack-shift! stk offset 'right)
   (stack-set! stk offset elem))
-(define (stack-drop! stk offset) (stack-shift! stk offset 'left))
+
+(: stack-drop! (stack fixnum -> void))
+(define (stack-drop! stk offset)
+  (stack-shift! stk offset 'left))
 
 ;;; dictionary ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -108,12 +133,12 @@
 
 (define-constant VERSION "0.1.0")
 
-(define state STATE-INTERPRET)
-(define base  10)
+(: state boolean) (define state STATE-INTERPRET)
+(: base fixnum) (define base 10)
 
-(define pstk (make-stack (expt 2 16)))
-(define rstk (make-stack (expt 2 16)))
-(define dict '())
+(: pstk stack) (define pstk (make-stack (expt 2 16)))
+(: rstk stack) (define rstk (make-stack (expt 2 16)))
+(: dict dict) (define dict '())
 
 ;;; primitives ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -247,10 +272,12 @@
 
 ;;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(: number-valid? (string --> boolean))
 (define (number-valid? str)
   (let ((num (string->number str)))
     (and num (fixnum? num))))
 
+(: number-run! (string stack -> void))
 (define (number-run! str stk)
   (stack-push! stk (string->number str)))
 
