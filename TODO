@@ -1,3 +1,5 @@
+TODO add branch primitives and words
+TODO add looping words
 TODO skip \ comments in word primitive
 TODO add macro to define forth words in scheme
 TODO replace VERSION string literal with compile-time read from file
