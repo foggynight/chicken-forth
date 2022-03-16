@@ -4,6 +4,7 @@
 
 (import (chicken bitwise)
         (chicken format)
+        (chicken io)
         (chicken process-context)
         (srfi 25)
         procedural-macros)
@@ -130,15 +131,15 @@
 (define-constant TRUE -1)
 (define-constant FALSE 0)
 
-(define-constant STATE-INTERPRET #f)
-(define-constant STATE-COMPILE   #t)
+(define-constant STATE-IMD #f) ; immediate mode
+(define-constant STATE-CMP #t) ; compile mode
 
 (define-constant VERSION "0.1.0")
 
-(: state boolean) (define state STATE-INTERPRET)
-(: base fixnum) (define base 10)
+(: state boolean) (define state STATE-IMD)
+(: radix fixnum) (define radix 10)
 
-(: pstk stack) (define pstk (make-stack (expt 2 16)))
+(: lstk stack) (define lstk (make-stack (expt 2 16)))
 (: rstk stack) (define rstk (make-stack (expt 2 16)))
 (: dict dict) (define dict '())
 
@@ -156,158 +157,198 @@
 ;; stack manipulation primitives
 
 (def-code "dup" 0
-  (stack-push! pstk (stack-top pstk)))
+  (stack-push! lstk (stack-top lstk)))
 
 (def-code "?dup" 0
-  (unless (zero? (stack-top pstk))
-    (stack-push! pstk (stack-top pstk))))
+  (unless (zero? (stack-top lstk))
+    (stack-push! lstk (stack-top lstk))))
 
 (def-code "over" 0
-  (stack-push! pstk (stack-ref pstk 1)))
+  (stack-push! lstk (stack-ref lstk 1)))
 
 (def-code "drop" 0
-  (stack-pop! pstk))
+  (stack-pop! lstk))
 
 (def-code "nip" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-set! pstk 0 t)))
+  (let ((t (stack-pop! lstk)))
+    (stack-set! lstk 0 t)))
 
 (def-code "swap" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-ins! pstk 1 t)))
+  (let ((t (stack-pop! lstk)))
+    (stack-ins! lstk 1 t)))
 
 (def-code "rot" 0
-  (stack-push! pstk (stack-ref pstk 2))
-  (stack-drop! pstk 3))
+  (stack-push! lstk (stack-ref lstk 2))
+  (stack-drop! lstk 3))
 
 (def-code "-rot" 0
-  (stack-ins! pstk 3 (stack-top pstk))
-  (stack-pop! pstk))
+  (stack-ins! lstk 3 (stack-top lstk))
+  (stack-pop! lstk))
 
 (def-code "2dup" 0
-  (stack-push! pstk (stack-ref pstk 1))
-  (stack-push! pstk (stack-ref pstk 1)))
+  (stack-push! lstk (stack-ref lstk 1))
+  (stack-push! lstk (stack-ref lstk 1)))
 
 (def-code "2drop" 0
-  (stack-drop! pstk 0 2))
+  (stack-drop! lstk 0 2))
 
 (def-code "2swap" 0
-  (let ((t1 (stack-pop! pstk))
-        (t2 (stack-pop! pstk)))
-    (stack-ins! pstk 2 t1)
-    (stack-ins! pstk 2 t2)))
+  (let ((t1 (stack-pop! lstk))
+        (t2 (stack-pop! lstk)))
+    (stack-ins! lstk 2 t1)
+    (stack-ins! lstk 2 t2)))
+
+(def-code ">r" 0
+  (stack-push! rstk (stack-pop! lstk)))
+
+(def-code "r>" 0
+  (stack-push! lstk (stack-pop! rstk)))
+
+(def-code "rdrop" 0
+  (stack-pop! rstk))
 
 ;; arithmetic primitives
 
 (def-code "+" 0
-  (stack-push! pstk (+ (stack-pop! pstk) (stack-pop! pstk))))
+  (stack-push! lstk (+ (stack-pop! lstk) (stack-pop! lstk))))
 
 (def-code "-" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (- (stack-pop! pstk) t))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (- (stack-pop! lstk) t))))
 
 (def-code "*" 0
-  (stack-push! pstk (* (stack-pop! pstk) (stack-pop! pstk))))
+  (stack-push! lstk (* (stack-pop! lstk) (stack-pop! lstk))))
 
 (def-code "/" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (// (stack-pop! pstk) t))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (// (stack-pop! lstk) t))))
 
 (def-code "2+" 0
-  (stack-push! pstk (+ (stack-pop! pstk) 2)))
+  (stack-push! lstk (+ (stack-pop! lstk) 2)))
 
 (def-code "2-" 0
-  (stack-push! pstk (- (stack-pop! pstk) 2)))
+  (stack-push! lstk (- (stack-pop! lstk) 2)))
 
 (def-code "4+" 0
-  (stack-push! pstk (+ (stack-pop! pstk) 4)))
+  (stack-push! lstk (+ (stack-pop! lstk) 4)))
 
 (def-code "4-" 0
-  (stack-push! pstk (- (stack-pop! pstk) 4)))
+  (stack-push! lstk (- (stack-pop! lstk) 4)))
 
 (def-code "mod" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (modulo (stack-pop! pstk) t))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (modulo (stack-pop! lstk) t))))
 
 (def-code "/mod" 0
-  (let ((t1 (stack-pop! pstk))
-        (t2 (stack-pop! pstk)))
-    (stack-push! pstk (// t2 t1))
-    (stack-push! pstk (modulo t2 t1))))
+  (let ((t1 (stack-pop! lstk))
+        (t2 (stack-pop! lstk)))
+    (stack-push! lstk (// t2 t1))
+    (stack-push! lstk (modulo t2 t1))))
 
 (def-code "mod/" 0
-  (let ((t1 (stack-pop! pstk))
-        (t2 (stack-pop! pstk)))
-    (stack-push! pstk (modulo t2 t1))
-    (stack-push! pstk (// t2 t1))))
+  (let ((t1 (stack-pop! lstk))
+        (t2 (stack-pop! lstk)))
+    (stack-push! lstk (modulo t2 t1))
+    (stack-push! lstk (// t2 t1))))
 
 ;; comparison primitives
 
 (def-code "=" 0
-  (stack-push! pstk (if (= (stack-pop! pstk) (stack-pop! pstk)) TRUE FALSE)))
+  (stack-push! lstk (if (= (stack-pop! lstk) (stack-pop! lstk)) TRUE FALSE)))
 
 (def-code "<>" 0
-  (stack-push! pstk (if (= (stack-pop! pstk) (stack-pop! pstk)) FALSE TRUE)))
+  (stack-push! lstk (if (= (stack-pop! lstk) (stack-pop! lstk)) FALSE TRUE)))
 
 (def-code "<" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (< (stack-pop! pstk) t) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (< (stack-pop! lstk) t) TRUE FALSE))))
 
 (def-code ">" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (> (stack-pop! pstk) t) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (> (stack-pop! lstk) t) TRUE FALSE))))
 
 (def-code "<=" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (<= (stack-pop! pstk) t) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (<= (stack-pop! lstk) t) TRUE FALSE))))
 
 (def-code ">=" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (>= (stack-pop! pstk) t) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (>= (stack-pop! lstk) t) TRUE FALSE))))
 
 (def-code "0=" 0
-  (stack-push! pstk (if (zero? (stack-pop! pstk)) TRUE FALSE)))
+  (stack-push! lstk (if (zero? (stack-pop! lstk)) TRUE FALSE)))
 
 (def-code "0<>" 0
-  (stack-push! pstk (if (zero? (stack-pop! pstk)) FALSE TRUE)))
+  (stack-push! lstk (if (zero? (stack-pop! lstk)) FALSE TRUE)))
 
 (def-code "0<" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (negative? (stack-pop! pstk)) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (negative? (stack-pop! lstk)) TRUE FALSE))))
 
 (def-code "0>" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (positive? (stack-pop! pstk)) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (positive? (stack-pop! lstk)) TRUE FALSE))))
 
 (def-code "0<=" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (<= (stack-pop! pstk) 0) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (<= (stack-pop! lstk) 0) TRUE FALSE))))
 
 (def-code "0>=" 0
-  (let ((t (stack-pop! pstk)))
-    (stack-push! pstk (if (>= (stack-pop! pstk) 0) TRUE FALSE))))
+  (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (if (>= (stack-pop! lstk) 0) TRUE FALSE))))
 
 ;; bitwise primitives
 
 (def-code "and" 0
-  (stack-push! pstk (bitwise-and (stack-pop! pstk) (stack-pop! pstk))))
+  (stack-push! lstk (bitwise-and (stack-pop! lstk) (stack-pop! lstk))))
 
 (def-code "or" 0
-  (stack-push! pstk (bitwise-ior (stack-pop! pstk) (stack-pop! pstk))))
+  (stack-push! lstk (bitwise-ior (stack-pop! lstk) (stack-pop! lstk))))
 
 (def-code "xor" 0
-  (stack-push! pstk (bitwise-xor (stack-pop! pstk) (stack-pop! pstk))))
+  (stack-push! lstk (bitwise-xor (stack-pop! lstk) (stack-pop! lstk))))
 
 (def-code "invert" 0
-  (stack-push! pstk (bitwise-not (stack-pop! pstk))))
+  (stack-push! lstk (bitwise-not (stack-pop! lstk))))
 
 ;; input and output
 
-(def-code "." 0
-  (printf "~A " (stack-pop! pstk)))
+(def-code "key" 0
+  (define byte (read-byte))
+  (if (eof-object? byte)
+      (exit)
+      (stack-push! lstk byte)))
+
+(def-code "word" 0
+  (define (next-char)
+    (forth-key)
+    (integer->char (stack-pop! lstk)))
+  (define str "")
+  (let loop ((skip #f)
+             (c (next-char)))
+    (if skip
+        (if (char-whitespace? c)
+            (loop #t (next-char))
+            (begin (set! str (string-append str (string c)))
+                   (loop #f (next-char))))
+        (unless (char-whitespace? c)
+          (set! str (string-append str (string c)))
+          (loop #f (next-char)))))
+  (stack-push! lstk str)
+  (stack-push! lstk (string-length str)))
+
+(def-code "number" 0
+  (define len (stack-pop! lstk))
+  (define str (stack-pop! lstk))
+  (let ((n (string->number str radix)))
+    (stack-push! lstk (if n n 0))
+    (stack-push! lstk (if n 0 -1))))
 
 (def-code "emit" 0
-  (printf "~A" (integer->char (stack-pop! pstk))))
+  (printf "~A" (integer->char (stack-pop! lstk))))
+
+(def-code "." 0
+  (printf "~A " (stack-pop! lstk)))
 
 ;;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -327,7 +368,7 @@
   (display "( ")
   (do ((i 0 (1+ i)))
       ((= i (stack-index stk)))
-    (display (array-ref (stack-data stk) i))
+    (write (array-ref (stack-data stk) i))
     (display #\space))
   (display ") ")
   (flush-output))
@@ -348,12 +389,14 @@
 
 (: main (-> void))
 (define (main)
+  (print-stack lstk)
   (do ((word (parse-word) (parse-word)))
       ((or (not word) (eof-object? word)))
     (let ((entry (dict-ref dict word)))
       (cond ((not (not entry)) ((entry-code entry)))
-            ((number-valid? word) (number-run! word pstk))
-            (else (printf "undefined word: ~A~%" word))))))
+            ((number-valid? word) (number-run! word lstk))
+            (else (printf "undefined word: ~A~%" word))))
+    (print-stack lstk)))
 
 (let ((args (command-line-arguments)))
   (cond ((null? args) (main))

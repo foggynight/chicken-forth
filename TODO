@@ -1,2 +1,3 @@
 TODO replace VERSION string literal with compile-time read from file
 TODO optimize stack-drop for multiple drops
+TODO skip \ comments in word primitive
