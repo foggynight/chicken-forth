@@ -108,6 +108,9 @@
 (define-type entry (struct entry))
 (define-type dict (list-of entry))
 
+(define-constant FLAG-HIDDEN    #x1)
+(define-constant FLAG-IMMEDIATE #x2)
+
 (define-record-type entry
   (make-entry name flag code)
   entry?
@@ -115,11 +118,25 @@
   (flag entry-flag entry-flag-set!)
   (code entry-code entry-code-set!))
 
+(define (entry-hidden? entry)
+  (not (zero? (bitwise-and (entry-flag entry) FLAG-HIDDEN))))
+
+(define (entry-immediate? entry)
+  (not (zero? (bitwise-and (entry-flag entry) FLAG-IMMEDIATE))))
+
+(define (entry-hidden-toggle! entry)
+  (entry-flag-set! entry (bitwise-xor (entry-flag entry) FLAG-HIDDEN)))
+
+(define (entry-immediate-toggle! entry)
+  (entry-flag-set! entry (bitwise-xor (entry-flag entry) FLAG-IMMEDIATE)))
+
 (: dict-ref (dict string --> (or entry false)))
 (define (dict-ref dict word)
   (let loop ((lst dict))
     (cond ((null? lst) #f)
-          ((string-ci=? word (entry-name (car lst))) (car lst))
+          ((and (not (entry-hidden? (car lst)))
+                (string-ci=? word (entry-name (car lst))))
+           (car lst))
           (else (loop (cdr lst))))))
 
 (: dict-has? (dict string --> boolean))
@@ -128,33 +145,52 @@
 
 ;;; global ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define-constant VERSION "0.1.0")
+
 (define-constant TRUE -1)
 (define-constant FALSE 0)
 
-(define-constant STATE-IMD #f) ; immediate mode
-(define-constant STATE-CMP #t) ; compile mode
-
-(define-constant VERSION "0.1.0")
-
-(: state boolean) (define state STATE-IMD)
-(: radix fixnum) (define radix 10)
+(define-constant STATE-EXECUTE #f)
+(define-constant STATE-COMPILE #t)
 
 (: lstk stack) (define lstk (make-stack (expt 2 16)))
 (: rstk stack) (define rstk (make-stack (expt 2 16)))
-(: dict dict) (define dict '())
+(: dict dict)  (define dict '())
 
-;;; primitives ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(: next list)     (define next  '())
+(: radix fixnum)  (define radix 10)
+(: state boolean) (define state STATE-EXECUTE)
+
+;;; docol ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(: docol ((or procedure list) -> void))
+(define (docol elem)
+  (if (procedure? elem)
+      (elem)
+      (for-each (lambda (e)
+                  (if (procedure? e) (e) (stack-push! lstk e)))
+                elem)))
+
+;;; forth ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Add an entry to the dictionary with the members NAME and FLAG, CODE is
 ;; created by wrapping the given expression body in REST in a lambda. This macro
-;; also defines a procedure named forth-NAME which points to that lambda.
+;; also defines a variable named forth-NAME which contains that lambda.
 (define-macro (def-code name flag . rest)
   (let ((thunk `(lambda () ,@rest)))
     `(begin (set! dict (cons (make-entry ,name ,flag ,thunk) dict))
             (define (,(string->symbol (string-append "forth-" name)))
               (,thunk)))))
 
-;; stack manipulation primitives
+(define-macro (def-const name flag value)
+  `(def-code ,name ,flag
+     (stack-push! lstk ,value)))
+
+;; forth constants
+
+(def-const "version" 0 VERSION)
+
+;; stack manipulation
 
 (def-code "dup" 0
   (stack-push! lstk (stack-top lstk)))
@@ -207,7 +243,7 @@
 (def-code "rdrop" 0
   (stack-pop! rstk))
 
-;; arithmetic primitives
+;; arithmetic operators
 
 (def-code "+" 0
   (stack-push! lstk (+ (stack-pop! lstk) (stack-pop! lstk))))
@@ -251,7 +287,7 @@
     (stack-push! lstk (modulo t2 t1))
     (stack-push! lstk (// t2 t1))))
 
-;; comparison primitives
+;; comparison operators
 
 (def-code "=" 0
   (stack-push! lstk (if (= (stack-pop! lstk) (stack-pop! lstk)) TRUE FALSE)))
@@ -297,7 +333,7 @@
   (let ((t (stack-pop! lstk)))
     (stack-push! lstk (if (>= (stack-pop! lstk) 0) TRUE FALSE))))
 
-;; bitwise primitives
+;; bitwise operators
 
 (def-code "and" 0
   (stack-push! lstk (bitwise-and (stack-pop! lstk) (stack-pop! lstk))))
@@ -350,53 +386,95 @@
 (def-code "." 0
   (printf "~A " (stack-pop! lstk)))
 
-;;; runner ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; dictionary and compiler
 
-(: number-valid? (string --> boolean))
-(define (number-valid? str)
-  (let ((num (string->number str)))
-    (and num (fixnum? num))))
+(def-code "create" 0
+  (define len (stack-pop! lstk))
+  (define str (stack-pop! lstk))
+  (define entry (make-entry str 0 (void)))
+  (set! dict (cons entry dict)))
 
-(: number-run! (string stack -> void))
-(define (number-run! str stk)
-  (stack-push! stk (string->number str)))
+(def-code "latest" 0
+  (stack-push! lstk (car dict)))
+
+(def-code "hidden" 0
+  (define entry (stack-pop! lstk))
+  (entry-hidden-toggle! entry))
+
+(def-code "immediate" 0
+  (define entry (stack-pop! lstk))
+  (entry-immediate-toggle! entry))
+
+(def-code "find" 0
+  (define len (stack-pop! lstk))
+  (define str (stack-pop! lstk))
+  (let ((entry (dict-ref dict str)))
+    (stack-push! lstk (if entry entry FALSE))))
+
+(def-code "code" 0
+  (define entry (stack-pop! lstk))
+  (stack-push! lstk (entry-code entry)))
+
+(def-code "," 0
+  (set! next (cons (stack-pop! lstk) next)))
+
+(def-code "[" FLAG-IMMEDIATE
+  (set! state STATE-EXECUTE))
+
+(def-code "]" 0
+  (set! state STATE-COMPILE))
+
+(def-code ":" 0
+  (forth-word)
+  (forth-create)
+  (forth-latest)
+  (forth-hidden)
+  (|forth-]|))
+
+(def-code ";" FLAG-IMMEDIATE
+  (forth-latest)
+  (let ((entry (stack-pop! lstk)))
+    (entry-code-set! entry (reverse next)))
+  (set! next '())
+  (forth-latest)
+  (forth-hidden)
+  (|forth-[|))
+
+;; interpreter
+
+(def-code "interpret" 0
+  (forth-word)
+  (define length (stack-ref lstk 0))
+  (define input (stack-ref lstk 1))
+  (forth-find)
+  (let ((entry (stack-pop! lstk)))
+    (if (eqv? entry FALSE)
+        ;; assume input was a number
+        (begin (stack-push! lstk input)
+               (stack-push! lstk length)
+               (forth-number)
+               (if (zero? (stack-pop! lstk))
+                   (begin (stack-push! lstk (stack-pop! lstk))
+                          (unless (eqv? state STATE-EXECUTE)
+                            (|forth-,|)))
+                   (begin (stack-pop! lstk)
+                          (printf "parse error: ~A~%" input))))
+        ;; input is a word in the dictionary
+        (if (or (eqv? state STATE-EXECUTE)
+                (entry-immediate? entry))
+            (docol (entry-code entry))
+            (begin (stack-push! lstk (entry-code entry))
+                   (|forth-,|))))))
+
+(def-code "quit" 0
+  (forth-interpret)
+  (forth-quit))
 
 ;;; main ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(: print-stack (stack -> void))
-(define (print-stack stk)
-  (display "( ")
-  (do ((i 0 (1+ i)))
-      ((= i (stack-index stk)))
-    (write (array-ref (stack-data stk) i))
-    (display #\space))
-  (display ") ")
-  (flush-output))
-
-(: parse-word (-> (or string false)))
-(define (parse-word)
-  (define word "")
-  (let loop ((read #f)
-             (char (read-char)))
-    (if read
-        (if (or (eof-object? char) (char-whitespace? char))
-            word
-            (begin (set! word (string-append word (string char)))
-                   (loop #t (read-char))))
-        (cond ((eof-object? char) #f)
-              ((char-whitespace? char) (loop #f (read-char)))
-              (else (loop #t char))))))
-
 (: main (-> void))
 (define (main)
-  (print-stack lstk)
-  (do ((word (parse-word) (parse-word)))
-      ((or (not word) (eof-object? word)))
-    (let ((entry (dict-ref dict word)))
-      (cond ((not (not entry)) ((entry-code entry)))
-            ((number-valid? word) (number-run! word lstk))
-            (else (printf "undefined word: ~A~%" word))))
-    (print-stack lstk)))
+  (forth-quit))
 
 (let ((args (command-line-arguments)))
   (cond ((null? args) (main))
