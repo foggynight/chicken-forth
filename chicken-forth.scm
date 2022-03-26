@@ -259,17 +259,11 @@
   (let ((t (stack-pop! lstk)))
     (stack-push! lstk (// (stack-pop! lstk) t))))
 
-(def-code "2+" 0
-  (stack-push! lstk (+ (stack-pop! lstk) 2)))
+(def-code "1+" 0
+  (stack-push! lstk (1+ (stack-pop! lstk))))
 
-(def-code "2-" 0
-  (stack-push! lstk (- (stack-pop! lstk) 2)))
-
-(def-code "4+" 0
-  (stack-push! lstk (+ (stack-pop! lstk) 4)))
-
-(def-code "4-" 0
-  (stack-push! lstk (- (stack-pop! lstk) 4)))
+(def-code "1-" 0
+  (stack-push! lstk (1- (stack-pop! lstk))))
 
 (def-code "mod" 0
   (let ((t (stack-pop! lstk)))
@@ -335,6 +329,9 @@
 
 ;; bitwise operators
 
+(def-code "not" 0
+  (stack-push! lstk (bitwise-not (stack-pop! lstk))))
+
 (def-code "and" 0
   (stack-push! lstk (bitwise-and (stack-pop! lstk) (stack-pop! lstk))))
 
@@ -343,9 +340,6 @@
 
 (def-code "xor" 0
   (stack-push! lstk (bitwise-xor (stack-pop! lstk) (stack-pop! lstk))))
-
-(def-code "invert" 0
-  (stack-push! lstk (bitwise-not (stack-pop! lstk))))
 
 ;; input and output
 
