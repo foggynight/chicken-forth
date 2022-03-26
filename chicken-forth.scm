@@ -257,6 +257,10 @@
 
 (def-code "/" 0
   (let ((t (stack-pop! lstk)))
+    (stack-push! lstk (/ (stack-pop! lstk) t))))
+
+(def-code "//" 0
+  (let ((t (stack-pop! lstk)))
     (stack-push! lstk (// (stack-pop! lstk) t))))
 
 (def-code "1+" 0
