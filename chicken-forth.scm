@@ -163,13 +163,11 @@
 
 ;;; docol ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(: docol ((or procedure list) -> void))
+(: docol (any -> void))
 (define (docol elem)
-  (if (procedure? elem)
-      (elem)
-      (for-each (lambda (e)
-                  (if (procedure? e) (e) (stack-push! lstk e)))
-                elem)))
+  (cond ((procedure? elem) (elem))
+        ((pair? elem) (for-each docol elem))
+        (else (stack-push! lstk elem))))
 
 ;;; forth ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
