@@ -455,11 +455,14 @@
                    (begin (stack-pop! lstk)
                           (printf "unknown word: ~A~%" input))))
         ;; input is a word in the dictionary
-        (if (or (eqv? state STATE-EXECUTE)
-                (entry-immediate? entry))
-            (docol (entry-code entry))
-            (begin (stack-push! lstk (entry-code entry))
-                   (|forth-,|))))))
+        (let ((se (eqv? state STATE-EXECUTE))
+              (ei (entry-immediate? entry)))
+          (if (or se ei)
+              (if (and se ei)
+                  (printf "interpreted compile-only word: ~A~%" input)
+                  (docol (entry-code entry)))
+              (begin (stack-push! lstk (entry-code entry))
+                     (|forth-,|)))))))
 
 (def-code "quit" 0
   (forth-interpret)
