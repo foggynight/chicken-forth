@@ -231,8 +231,8 @@
 (def-code "2swap" 0
   (let ((t1 (stack-pop! lstk))
         (t2 (stack-pop! lstk)))
-    (stack-ins! lstk 2 t1)
-    (stack-ins! lstk 2 t2)))
+    (stack-ins! lstk 2 t2)
+    (stack-ins! lstk 2 t1)))
 
 (def-code ">r" 0
   (stack-push! rstk (stack-pop! lstk)))
