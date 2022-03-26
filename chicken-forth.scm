@@ -354,7 +354,7 @@
     (forth-key)
     (integer->char (stack-pop! lstk)))
   (define str "")
-  (let loop ((skip #f)
+  (let loop ((skip #t)
              (c (next-char)))
     (if skip
         (if (char-whitespace? c)
