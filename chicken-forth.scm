@@ -429,8 +429,8 @@
 
 (def-code ";" FLAG-IMMEDIATE
   (forth-latest)
-  (let ((entry (stack-pop! lstk)))
-    (entry-code-set! entry (reverse next)))
+  (entry-code-set! (stack-pop! lstk)
+                   (reverse next))
   (set! next '())
   (forth-latest)
   (forth-hidden)
