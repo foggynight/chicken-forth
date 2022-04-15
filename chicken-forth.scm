@@ -392,6 +392,15 @@
 (def-code ".s" 0
   (print lstk))
 
+(def-code "write" 0
+  (write (stack-pop! lstk)))
+
+(def-code "display" 0
+  (display (stack-pop! lstk)))
+
+(def-code "print" 0
+  (print (stack-pop! lstk)))
+
 ;; dictionary and compiler
 
 (def-code "create" 0
