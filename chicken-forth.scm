@@ -33,14 +33,20 @@
 
 ;;; stack ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-type stack (struct stack))
-
 (define-record-type stack
   (%make-stack data size index)
   stack?
   (data stack-data)
   (size stack-size)
   (index stack-index stack-index-set!))
+
+(define-type stack (struct stack))
+
+(define-record-printer (stack rec op)
+  (fprintf op "<~A>" (stack-index rec))
+  (do ((i 0 (1+ i)))
+      ((= i (stack-index rec)))
+    (fprintf op " ~A" (array-ref (stack-data rec) i))))
 
 (: make-stack (fixnum --> stack))
 (define (make-stack size)
@@ -105,9 +111,6 @@
 ;; The dictionary contains the wordlist of the program, it is represented by a
 ;; list of entry records.
 
-(define-type entry (struct entry))
-(define-type dict (list-of entry))
-
 (define-constant FLAG-HIDDEN    #x1)
 (define-constant FLAG-IMMEDIATE #x2)
 
@@ -117,6 +120,9 @@
   (name entry-name entry-name-set!)
   (flag entry-flag entry-flag-set!)
   (code entry-code entry-code-set!))
+
+(define-type entry (struct entry))
+(define-type dict (list-of entry))
 
 (define (entry-hidden? entry)
   (not (zero? (bitwise-and (entry-flag entry) FLAG-HIDDEN))))
@@ -380,6 +386,9 @@
 
 (def-code "." 0
   (printf "~A " (stack-pop! lstk)))
+
+(def-code ".s" 0
+  (print lstk))
 
 ;; dictionary and compiler
 
