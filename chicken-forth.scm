@@ -177,8 +177,7 @@
 (define-macro (def-code name flag . rest)
   (let ((thunk `(lambda () ,@rest)))
     `(begin (set! dict (cons (make-entry ,name ,flag ,thunk) dict))
-            (define (,(string->symbol (string-append "forth-" name)))
-              (,thunk)))))
+            (define ,(string->symbol (string-append "forth-" name)) ,thunk))))
 
 (define-macro (def-const name flag value)
   `(def-code ,name ,flag
