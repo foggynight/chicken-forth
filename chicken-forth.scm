@@ -384,7 +384,7 @@
     (stack-push! lstk (if n 0 -1))))
 
 (def-code "emit" 0
-  (printf "~A" (integer->char (stack-pop! lstk))))
+  (display (integer->char (stack-pop! lstk))))
 
 (def-code "." 0
   (printf "~A " (stack-pop! lstk)))
