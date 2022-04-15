@@ -185,13 +185,15 @@
     `(begin (set! dict (cons (make-entry ,name ,flag ,thunk) dict))
             (define ,(string->symbol (string-append "forth-" name)) ,thunk))))
 
-(define-macro (def-const name flag value)
-  `(def-code ,name ,flag
-     (stack-push! lstk ,value)))
+(define-syntax def-const
+  (syntax-rules ()
+    ((_ name value)
+     (def-code name 0
+       (stack-push! lstk value)))))
 
 ;; forth constants
 
-(def-const "version" 0 VERSION)
+(def-const "version" VERSION)
 
 ;; stack manipulation
 
