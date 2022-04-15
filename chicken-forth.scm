@@ -36,9 +36,9 @@
 (define-record-type stack
   (%make-stack data size index)
   stack?
-  (data stack-data)
-  (size stack-size)
-  (index stack-index stack-index-set!))
+  (data stack-data)                     ; data buffer represented by array
+  (size stack-size)                     ; size of data buffer in cells
+  (index stack-index stack-index-set!)) ; index of next free cell in data buffer
 
 (define-type stack (struct stack))
 
@@ -124,15 +124,19 @@
 (define-type entry (struct entry))
 (define-type dict (list-of entry))
 
+(: entry-hidden? (entry --> boolean))
 (define (entry-hidden? entry)
   (not (zero? (bitwise-and (entry-flag entry) FLAG-HIDDEN))))
 
+(: entry-immediate? (entry --> boolean))
 (define (entry-immediate? entry)
   (not (zero? (bitwise-and (entry-flag entry) FLAG-IMMEDIATE))))
 
+(: entry-hidden-toggle! (entry -> void))
 (define (entry-hidden-toggle! entry)
   (entry-flag-set! entry (bitwise-xor (entry-flag entry) FLAG-HIDDEN)))
 
+(: entry-immediate-toggle! (entry -> void))
 (define (entry-immediate-toggle! entry)
   (entry-flag-set! entry (bitwise-xor (entry-flag entry) FLAG-IMMEDIATE)))
 
@@ -151,13 +155,13 @@
 
 ;;; global ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-constant VERSION "0.1.0")
+(: VERSION string) (define-constant VERSION "0.1.0")
 
-(define-constant TRUE -1)
-(define-constant FALSE 0)
+(: TRUE fixnum)  (define-constant TRUE -1)
+(: FALSE fixnum) (define-constant FALSE 0)
 
-(define-constant STATE-EXECUTE #f)
-(define-constant STATE-COMPILE #t)
+(: STATE-EXECUTE boolean) (define-constant STATE-EXECUTE #f)
+(: STATE-COMPILE boolean) (define-constant STATE-COMPILE #t)
 
 (: lstk stack) (define lstk (make-stack (expt 2 16)))
 (: rstk stack) (define rstk (make-stack (expt 2 16)))
@@ -179,7 +183,7 @@
 
 ;; Add an entry to the dictionary with the members NAME and FLAG, CODE is
 ;; created by wrapping the given expression body in REST in a lambda. This macro
-;; also defines a variable named forth-NAME which contains that lambda.
+;; also defines a variable named forth-NAME which is bound to that lambda.
 (define-macro (def-code name flag . rest)
   (let ((thunk `(lambda () ,@rest)))
     `(begin (set! dict (cons (make-entry ,name ,flag ,thunk) dict))
