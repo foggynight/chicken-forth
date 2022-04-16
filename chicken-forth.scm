@@ -7,7 +7,8 @@
         (chicken io)
         (chicken process-context)
         (srfi 25)
-        procedural-macros)
+        procedural-macros
+        vector-lib)
 
 ;;; utility ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -167,17 +168,22 @@
 (: rstk stack) (define rstk (make-stack (expt 2 16)))
 (: dict dict)  (define dict '())
 
-(: next list)     (define next  '())
+(: next vector)   (define next  #())
 (: radix fixnum)  (define radix 10)
 (: state boolean) (define state STATE-EXECUTE)
 
 ;;; docol ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(: docol (any -> void))
+(: docol (any -> fixnum))
 (define (docol elem)
-  (cond ((procedure? elem) (elem))
-        ((pair? elem) (for-each docol elem))
-        (else (stack-push! lstk elem))))
+  (cond ((procedure? elem) (elem) -1)
+        ((vector? elem)
+         (do ((i 0 (1+ i)))
+             ((= i (vector-length elem)))
+           (let ((ii (docol (vector-ref elem i))))
+             (unless (= ii -1)
+               (set! i (1- ii))))))
+        (else (stack-push! lstk elem) -1)))
 
 ;;; forth ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -435,7 +441,7 @@
   (stack-push! lstk (entry-code entry)))
 
 (def-code "," 0
-  (set! next (cons (stack-pop! lstk) next)))
+  (set! next (vector-append next (vector (stack-pop! lstk)))))
 
 (def-code "[" FLAG-IMMEDIATE
   (set! state STATE-EXECUTE))
@@ -452,9 +458,8 @@
 
 (def-code ";" FLAG-IMMEDIATE
   (forth-latest)
-  (entry-code-set! (stack-pop! lstk)
-                   (reverse next))
-  (set! next '())
+  (entry-code-set! (stack-pop! lstk) next)
+  (set! next #())
   (forth-latest)
   (forth-hidden)
   (|forth-[|))
@@ -473,7 +478,7 @@
                (stack-push! lstk length)
                (forth-number)
                (if (zero? (stack-pop! lstk))
-                   (unless (eqv? state STATE-EXECUTE)
+                   (when (eqv? state STATE-COMPILE)
                      (|forth-,|))
                    (begin (stack-pop! lstk)
                           (printf "unknown word: ~A~%" input))))
