@@ -1,4 +1,4 @@
-;; chicken-forth.scm - FORTH-like implemented in CHICKEN Scheme.
+;; chicken-forth.scm - FORTH-like implemented in CHICKEN Scheme
 ;; Copyright (C) 2022 Robert Coffey
 ;; Released under the MIT license.
 
@@ -108,9 +108,6 @@
     (stack-shift! stk offset 'left)))
 
 ;;; dictionary ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;; The dictionary contains the wordlist of the program, it is represented by a
-;; list of entry records.
 
 (define-constant FLAG-HIDDEN    #x1)
 (define-constant FLAG-IMMEDIATE #x2)
@@ -181,8 +178,7 @@
          (do ((i 0 (1+ i)))
              ((= i (vector-length elem)))
            (let ((ii (docol (vector-ref elem i))))
-             (unless (= ii -1)
-               (set! i (1- ii))))))
+             (unless (= ii -1) (set! i (1- ii))))))
         (else (stack-push! lstk elem) -1)))
 
 ;;; forth ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -195,6 +191,8 @@
     `(begin (set! dict (cons (make-entry ,name ,flag ,thunk) dict))
             (define ,(string->symbol (string-append "forth-" name)) ,thunk))))
 
+;; Add an entry to the dictionary using DEF-CODE with the member NAME and a null
+;; FLAG, CODE is a procedure which pushes VALUE on the data stack.
 (define-syntax def-const
   (syntax-rules ()
     ((_ name value)
