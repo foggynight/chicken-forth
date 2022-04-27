@@ -173,7 +173,9 @@
 
 (: docol (any -> fixnum))
 (define (docol elem)
-  (cond ((procedure? elem) (elem) -1)
+  (cond ((procedure? elem)
+         (let ((ret (elem)))
+           (if (number? ret) ret -1)))
         ((vector? elem)
          (do ((i 0 (1+ i)))
              ((= i (vector-length elem)))
@@ -408,6 +410,18 @@
 
 (def-code "print" 0
   (print (stack-pop! lstk)))
+
+;; branching and conditionals
+
+;; ( address -- )
+(def-code "branch" 0
+  (stack-pop! lstk))
+
+;; ( address flag -- )
+(def-code "0branch" 0
+  (let ((flag (stack-pop! lstk))
+        (addr (stack-pop! lstk)))
+    (if (zero? flag) addr -1)))
 
 ;; dictionary and compiler
 
