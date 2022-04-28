@@ -417,10 +417,10 @@
 (def-code "branch" 0
   (stack-pop! lstk))
 
-;; ( address flag -- )
+;; ( flag address -- )
 (def-code "0branch" 0
-  (let ((flag (stack-pop! lstk))
-        (addr (stack-pop! lstk)))
+  (let ((addr (stack-pop! lstk))
+        (flag (stack-pop! lstk)))
     (if (zero? flag) addr -1)))
 
 ;; dictionary and compiler
