@@ -1,0 +1,8 @@
+: fac
+  dup dup 14 0branch
+  1- dup 14 0branch
+    dup rot * swap
+  4 branch
+  drop ;
+
+4 fac print
