@@ -178,7 +178,7 @@
            (if (number? ret) ret -1)))
         ((vector? elem)
          (do ((i 0 (1+ i)))
-             ((= i (vector-length elem)))
+             ((>= i (vector-length elem)) -1)
            (let ((ii (docol (vector-ref elem i))))
              (unless (= ii -1) (set! i (1- ii))))))
         (else (stack-push! lstk elem) -1)))
@@ -218,7 +218,7 @@
   (stack-push! lstk (stack-ref lstk 1)))
 
 (def-code "drop" 0
-  (stack-pop! lstk))
+  (stack-pop! lstk) -1)
 
 (def-code "nip" 0
   (let ((t (stack-pop! lstk)))
