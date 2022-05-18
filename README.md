@@ -8,7 +8,8 @@ this implementation was heavily influenced by.
 
 ## Installation
 
-    make && sudo make install
+    make
+    make install
 
 ## License
 
